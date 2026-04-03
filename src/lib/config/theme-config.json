@@ -1,24 +1,9 @@
 {
   "palette": {
-    "mode": "dark",
-    "primary": {
-      "main": "#00FFD1"
-    },
-    "secondary": {
-      "main": "#00ccaa"
-    },
-    "background": {
-      "default": "#0B0B0B",
-      "paper": "#161616"
-    },
-    "text": {
-      "primary": "#FFFFFF",
-      "secondary": "#B3B3B3"
-    },
-    "divider": "#333333"
+    "mode": "light"
   },
   "typography": {
-    "fontFamily": "var(--font-bai-jamjuree), Inter, Roboto, sans-serif",
+    "fontFamily": "Roboto, sans-serif",
     "h1": {
       "fontWeight": 800,
       "textTransform": "uppercase",
@@ -56,96 +41,6 @@
     },
     "body1": {
       "lineHeight": 1.6
-    }
-  },
-  "components": {
-    "MuiAppBar": {
-      "styleOverrides": {
-        "root": {
-          "backgroundColor": "rgba(11, 11, 11, 0.8)",
-          "backdropFilter": "blur(10px)",
-          "borderBottom": "1px solid #333333",
-          "boxShadow": "none",
-          "color": "#FFFFFF"
-        }
-      }
-    },
-    "MuiCard": {
-      "styleOverrides": {
-        "root": {
-          "backgroundColor": "#161616",
-          "borderRadius": 12,
-          "boxShadow": "none",
-          "border": "1px solid #333333"
-        }
-      }
-    },
-    "MuiButton": {
-      "styleOverrides": {
-        "root": {
-          "borderRadius": 8,
-          "fontWeight": 800,
-          "textTransform": "uppercase",
-          "letterSpacing": "0.5px",
-          "padding": "10px 24px"
-        },
-        "containedPrimary": {
-          "&:hover": {
-            "backgroundColor": "#00ccaa"
-          }
-        }
-      }
-    },
-    "MuiChip": {
-      "styleOverrides": {
-        "root": {
-          "borderRadius": 6,
-          "fontWeight": 600,
-          "&.MuiChip-outlined": {
-            "borderColor": "#333333"
-          }
-        },
-        "sizeSmall": {
-          "borderRadius": 4,
-          "fontSize": "0.7rem",
-          "fontWeight": 700,
-          "textTransform": "uppercase",
-          "height": 24
-        }
-      }
-    },
-    "MuiDialog": {
-      "styleOverrides": {
-        "paper": {
-          "backgroundColor": "#0B0B0B",
-          "backgroundImage": "none",
-          "borderRadius": 16
-        }
-      }
-    },
-    "MuiDrawer": {
-      "styleOverrides": {
-        "paper": {
-          "backgroundColor": "#0B0B0B",
-          "backgroundImage": "none",
-          "borderLeft": "1px solid #333333"
-        }
-      }
-    },
-    "MuiTextField": {
-      "styleOverrides": {
-        "root": {
-          "& .MuiOutlinedInput-root": {
-            "borderRadius": 8,
-            "& fieldset": {
-              "borderColor": "#333333"
-            },
-            "&:hover fieldset": {
-              "borderColor": "#555555"
-            }
-          }
-        }
-      }
     }
   }
 }
