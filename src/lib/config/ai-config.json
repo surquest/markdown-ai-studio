@@ -1,0 +1,29 @@
+{
+  "defaultConfig": {
+    "projectId": "analytics-data-mart",
+    "location": "global",
+    "modelId": "gemini-3.1-pro-preview",
+    "temperature": 0.7,
+    "thinkingLevel": "high",
+    "systemInstructionFile": "default.md",
+    "oauthClientId": "334933044714-2b4alj4gve2jchu00k1uoiogr3d3qs4o.apps.googleusercontent.com"
+  },
+  "availableModels": [
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview"
+  ],
+  "thinkingLevels": [
+    "none",
+    "low",
+    "medium",
+    "high"
+  ],
+  "systemInstructionExampleFiles": [
+    "default.md",
+    "technical.md",
+    "creative.md",
+    "code.md"
+  ]
+}
