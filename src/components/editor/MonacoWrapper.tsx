@@ -27,14 +27,18 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { AutoFixHigh, Close, Check } from "@mui/icons-material";
 import { useVertexAI } from "@/lib/hooks/useVertexAI";
 import { useConfig } from "@/lib/context/ConfigContext";
+import { useOptionalVFS } from "@/lib/context/VFSContext";
+import { getMonacoLanguage } from "@/lib/vfs/vfs-db";
 
 export interface MonacoWrapperHandle {
   scrollToLine: (line: number) => void;
 }
 
 interface MonacoWrapperProps {
-  value: string;
-  onChange: (value: string) => void;
+  /** Controlled value. When omitted, reads from VFS context. */
+  value?: string;
+  /** Controlled onChange. When omitted, writes to VFS context. */
+  onChange?: (value: string) => void;
   onDiffChange?: (value: string | null) => void;
   onScroll?: (
     scrollTop: number,
@@ -44,7 +48,39 @@ interface MonacoWrapperProps {
 }
 
 const MonacoWrapper = forwardRef<MonacoWrapperHandle, MonacoWrapperProps>(
-  ({ value, onChange, onDiffChange, onScroll }, ref) => {
+  ({ value: valueProp, onChange: onChangeProp, onDiffChange, onScroll }, ref) => {
+    // VFS integration: use VFS context when value/onChange are not provided
+    const vfs = useOptionalVFS();
+    const isVFSMode = valueProp === undefined;
+
+    const effectiveValue = isVFSMode ? (vfs?.activeContent ?? '') : valueProp;
+    const effectiveOnChange = isVFSMode
+      ? (val: string) => vfs?.setActiveContent(val)
+      : onChangeProp!;
+
+    // Language detection
+    const vfsFileName = vfs?.activeFile?.split('/').pop() ?? '';
+    const effectiveLanguage = isVFSMode ? getMonacoLanguage(vfsFileName) : 'markdown';
+
+    // Placeholder when VFS mode and no file is open
+    if (isVFSMode && (!vfs?.activeFile || vfs.activeContent === null)) {
+      return (
+        <Box
+          sx={{
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            bgcolor: 'background.default',
+            color: 'text.disabled',
+          }}
+        >
+          <Typography variant="body2">
+            Select a file from the tree to edit
+          </Typography>
+        </Box>
+      );
+    }
     const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(
     null,
   );
@@ -306,7 +342,7 @@ useEffect(() => {
 
     const handleAcceptDiff = () => {
     if (pendingAiDiff !== null) {
-      onChange(pendingAiDiff);
+      effectiveOnChange(pendingAiDiff);
       setPendingAiDiff(null);
     }
   };
@@ -332,8 +368,8 @@ useEffect(() => {
           <Box sx={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
             <Box sx={{ flexGrow: 1, minHeight: 0 }}>
               <DiffEditor
-                language="markdown"
-                original={value}
+                language={effectiveLanguage}
+                original={effectiveValue}
                 modified={pendingAiDiff}
                 theme={monacoTheme}
                 options={{
@@ -387,28 +423,50 @@ useEffect(() => {
       {/* Main Editor (hidden when Diff is active to preserve state) */}
       <Box
         sx={{
-          display: pendingAiDiff === null ? "block" : "none",
+          display: pendingAiDiff === null ? "flex" : "none",
+          flexDirection: "column",
           height: "100%",
         }}
       >
-        <Editor
-          height="100%"
-          defaultLanguage="markdown"
-          value={value}
-          onChange={(val) => onChange(val || "")}
-          onMount={handleEditorMount}
-          theme={monacoTheme}
-          options={{
-            minimap: { enabled: false },
-            wordWrap: "on",
-            fontSize: 14,
-            lineNumbers: "on",
-            scrollBeyondLastLine: false,
-            automaticLayout: true,
-            tabSize: 2,
-            padding: { top: 16 },
-          }}
-        />
+        {/* File tab (VFS mode only) */}
+        {isVFSMode && vfs?.activeFile && (
+          <Box
+            sx={{
+              px: 1.5,
+              py: 0.5,
+              bgcolor: 'background.paper',
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+            }}
+          >
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
+              {vfs.activeFile}
+            </Typography>
+          </Box>
+        )}
+        <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+          <Editor
+            height="100%"
+            language={effectiveLanguage}
+            value={effectiveValue}
+            onChange={(val) => effectiveOnChange(val || "")}
+            onMount={handleEditorMount}
+            theme={monacoTheme}
+            options={{
+              minimap: { enabled: false },
+              wordWrap: "on",
+              fontSize: 14,
+              lineNumbers: "on",
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              tabSize: 2,
+              padding: { top: 16 },
+            }}
+          />
+        </Box>
       </Box>
 
       {/* Floating Popper on selection */}

@@ -4,6 +4,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from '@/theme';
 import { ConfigProvider } from '@/lib/context/ConfigContext';
+import { VFSProvider } from '@/lib/context/VFSContext';
 
 export default function Providers({
   children,
@@ -20,7 +21,9 @@ export default function Providers({
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <ConfigProvider defaultInstruction={defaultInstruction} examples={examples} defaultDocument={defaultDocument}>
-        {children}
+        <VFSProvider>
+          {children}
+        </VFSProvider>
       </ConfigProvider>
     </ThemeProvider>
   );

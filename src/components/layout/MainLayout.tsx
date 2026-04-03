@@ -27,9 +27,10 @@ import {
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   Download as DownloadIcon,
-  Upload as UploadIcon,
   NoteAdd as NoteAddIcon,
   ViewSidebar as ViewSidebarIcon,
+  FolderCopy as FolderCopyIcon,
+  DeleteSweep as DeleteSweepIcon,
 } from "@mui/icons-material";
 import {
   Panel,
@@ -43,6 +44,9 @@ import MarkdownPreview, {
   OutlineSidebar,
 } from "@/components/preview/MarkdownPreview";
 import SettingsDialog from "@/components/settings/SettingsDialog";
+import { useVFS } from "@/lib/context/VFSContext";
+import FileTree from "@/components/vfs/FileTree";
+import { exportWorkspaceAsZip } from "@/lib/vfs/export-zip";
 
 import type { MonacoWrapperHandle } from "@/components/editor/MonacoWrapper";
 
@@ -67,30 +71,17 @@ const MonacoWrapper = dynamic(
 );
 
 export default function MainLayout() {
-  const { auth, clearAuth, defaultDocument } = useConfig();
-  const [markdown, setMarkdown] = useState(defaultDocument);
+  const { auth, clearAuth } = useConfig();
+  const vfs = useVFS();
+  
   const [diffMarkdown, setDiffMarkdown] = useState<string | null>(null);
 
-  const displayMarkdown = diffMarkdown !== null ? diffMarkdown : markdown;
-
-  React.useEffect(() => {
-    try {
-      const stored = localStorage.getItem("markdown_content");
-      if (stored) {
-        setMarkdown(stored);
-      }
-    } catch (e) {}
-  }, []);
-
-  const handleMarkdownChange = useCallback((newMarkdown: string) => {
-    setMarkdown(newMarkdown);
-    try {
-      localStorage.setItem("markdown_content", newMarkdown);
-    } catch (e) {}
-  }, []);
+  const effectiveMarkdown = diffMarkdown !== null ? diffMarkdown : (vfs.activeContent ?? "");
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [showOutline, setShowOutline] = useState(true);
+  const [showFileTree, setShowFileTree] = useState(true);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [currentFileName, setCurrentFileName] = useState("document.md");
@@ -103,10 +94,8 @@ export default function MainLayout() {
     message: "",
     severity: "info",
   });
-  const [isDragging, setIsDragging] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<MonacoWrapperHandle>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleEditorScroll = useCallback(
     (scrollTop: number, scrollHeight: number, clientHeight: number) => {
@@ -119,8 +108,14 @@ export default function MainLayout() {
     [],
   );
 
-  const handleNewDocument = () => {
-    handleMarkdownChange("# New Document\n\n");
+  const handleNewDocument = async () => {
+    let finalName = "new-document";
+    let index = 1;
+    while (vfs.nodes.some(n => n.name === `${finalName}.md`)) {
+      finalName = `new-document-${index++}`;
+    }
+    const path = `/${finalName}.md`;
+    await vfs.addFile(path, "# New Document\n\n");
     setSnackbar({
       open: true,
       message: "New document created",
@@ -129,6 +124,10 @@ export default function MainLayout() {
   };
 
   const handleExport = () => {
+    if (vfs.activeFile) {
+      const activeFileName = vfs.activeFile.split('/').pop() || "document.md";
+      setCurrentFileName(activeFileName);
+    }
     setExportDialogOpen(true);
   };
 
@@ -139,7 +138,7 @@ export default function MainLayout() {
       finalName += '.md';
     }
 
-    const blob = new Blob([markdown], { type: "text/markdown" });
+    const blob = new Blob([effectiveMarkdown], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -155,67 +154,14 @@ export default function MainLayout() {
     });
   };
 
-  const handleImport = () => {
-    fileInputRef.current?.click();
-  };
-
-  const processFile = (file: File) => {
-    if (!file.name.match(/\.(md|markdown|txt)$/i)) {
-      setSnackbar({
-        open: true,
-        message: "Only markdown or text files are supported",
-        severity: "error",
-      });
-      return;
-    }
-
-    setCurrentFileName(file.name);
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result;
-      if (typeof content === "string") {
-        handleMarkdownChange(content);
-        setSnackbar({
-          open: true,
-          message: `Loaded ${file.name}`,
-          severity: "success",
-        });
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processFile(file);
-    }
-    // Reset input to allow re-importing the same file
-    e.target.value = "";
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      processFile(file);
-    }
+  const handleClearWorkspace = async () => {
+    await vfs.clearWorkspace();
+    setClearDialogOpen(false);
+    setSnackbar({
+      open: true,
+      message: "Workspace cleared successfully",
+      severity: "success",
+    });
   };
 
   const handleLogout = () => {
@@ -231,32 +177,7 @@ export default function MainLayout() {
         height: "100vh",
         position: "relative",
       }}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
     >
-      {isDragging && (
-        <Box
-          sx={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(25, 118, 210, 0.12)",
-            border: "4px dashed #1976d2",
-            zIndex: 9999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            pointerEvents: "none",
-          }}
-        >
-          <Typography variant="h4" color="primary">
-            Drop Markdown File Here
-          </Typography>
-        </Box>
-      )}
 
       {/* App Bar */}
       <AppBar
@@ -280,11 +201,21 @@ export default function MainLayout() {
 
           <Box sx={{ flexGrow: 1 }} />
 
-          <Tooltip title="Import Markdown">
-            <IconButton onClick={handleImport}>
-              <UploadIcon fontSize="small" />
+          <Tooltip title={showFileTree ? 'Hide Files' : 'Show Files'}>
+            <IconButton
+              onClick={() => setShowFileTree(!showFileTree)}
+              color={showFileTree ? 'primary' : 'default'}
+            >
+              <FolderCopyIcon fontSize="small" />
             </IconButton>
           </Tooltip>
+
+          <Tooltip title="Clear Workspace">
+            <IconButton onClick={() => setClearDialogOpen(true)} color="error">
+              <DeleteSweepIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+
           <Tooltip title="Export Markdown">
             <IconButton onClick={handleExport}>
               <DownloadIcon fontSize="small" />
@@ -348,60 +279,71 @@ export default function MainLayout() {
 
       {/* Main Content */}
       <Box sx={{ flexGrow: 1, display: "flex", overflow: "hidden" }}>
-        {/* Editor + Preview Split */}
-        <Box sx={{ flexGrow: 1, overflow: "hidden" }}>
           <PanelGroup orientation="horizontal">
-            <Panel defaultSize={50} minSize={25}>
-              <Box
-                sx={{
-                  height: "100%",
-                  position: "relative",
-                  borderRight: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <MonacoWrapper
-                  ref={editorRef}
-                  value={markdown}
-                  onChange={handleMarkdownChange}
-                  onScroll={handleEditorScroll}
-                  onDiffChange={setDiffMarkdown}
+            {/* File Tree Sidebar */}
+            {showFileTree && (
+              <>
+                <Panel defaultSize="250px" minSize="250px">
+                  <Box sx={{ height: "100%", borderRight: "1px solid", borderColor: "divider" }}>
+                    <FileTree onExportZip={() => exportWorkspaceAsZip()} />
+                  </Box>
+                </Panel>
+                <PanelResizeHandle
+                  style={
+                    {
+                      width: 6,
+                      backgroundColor: "var(--mui-palette-divider)",
+                      cursor: "col-resize",
+                    } as CSSProperties
+                  }
                 />
-              </Box>
-            </Panel>
-            <PanelResizeHandle
-              style={
-                {
-                  width: 6,
-                  backgroundColor: "var(--mui-palette-divider)",
-                  cursor: "col-resize",
-                } as CSSProperties
-              }
-            />
-            <Panel defaultSize={50} minSize={25}>
-              <MarkdownPreview content={displayMarkdown} previewRef={previewRef} />
+              </>
+            )}
+
+            {/* Editor + Preview Split */}
+            <Panel>
+              <PanelGroup orientation="horizontal">
+                <Panel defaultSize={50} minSize={25}>
+                  <Box
+                    sx={{
+                      height: "100%",
+                      position: "relative",
+                      borderRight: "1px solid",
+                      borderColor: "divider",
+                    }}
+                  >
+                    <MonacoWrapper
+                      ref={editorRef}
+                      onScroll={handleEditorScroll}
+                      onDiffChange={setDiffMarkdown}
+                    />
+                  </Box>
+                </Panel>
+                <PanelResizeHandle
+                  style={
+                    {
+                      width: 6,
+                      backgroundColor: "var(--mui-palette-divider)",
+                      cursor: "col-resize",
+                    } as CSSProperties
+                  }
+                />
+                <Panel defaultSize={50} minSize={25}>
+                  <MarkdownPreview content={diffMarkdown !== null ? diffMarkdown : undefined} previewRef={previewRef} />
+                </Panel>
+              </PanelGroup>
             </Panel>
           </PanelGroup>
+
+          {/* Outline Sidebar */}
+          {showOutline && (
+            <OutlineSidebar
+              markdown={effectiveMarkdown}
+              previewRef={previewRef}
+              onItemClick={(line) => editorRef.current?.scrollToLine(line)}
+            />
+          )}
         </Box>
-
-        {/* Outline Sidebar */}
-        {showOutline && (
-          <OutlineSidebar
-            markdown={displayMarkdown}
-            previewRef={previewRef}
-            onItemClick={(line) => editorRef.current?.scrollToLine(line)}       
-          />
-        )}
-      </Box>
-
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".md,.markdown,.txt"
-        style={{ display: "none" }}
-        onChange={handleFileChange}
-      />
 
       {/* Settings Dialog */}
       <SettingsDialog
@@ -439,6 +381,27 @@ export default function MainLayout() {
           <Button onClick={() => setExportDialogOpen(false)}>Cancel</Button>
           <Button onClick={confirmExport} variant="contained" color="primary">
             Export
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Clear Workspace Dialog */}
+      <Dialog
+        open={clearDialogOpen}
+        onClose={() => setClearDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Clear Workspace</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            Are you sure you want to delete all files and folders in your workspace? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClearDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleClearWorkspace} variant="contained" color="error">
+            Delete All
           </Button>
         </DialogActions>
       </Dialog>

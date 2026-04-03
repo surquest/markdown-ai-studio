@@ -1,14 +1,16 @@
 "use client";
 
-import React, { useEffect, useRef, useCallback, useId, useMemo } from "react";
+import React, { useEffect, useRef, useCallback, useId, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { Box, Paper, useTheme } from "@mui/material";
+import { Box, Paper, Typography, useTheme } from "@mui/material";
 import type { Components } from "react-markdown";
 import mermaid from "mermaid";
 import Script from "next/script";
 import { useConfig } from "@/lib/context/ConfigContext";
+import { useOptionalVFS } from "@/lib/context/VFSContext";
+import { normalisePath } from "@/lib/vfs/vfs-db";
 
 // Initialize mermaid
 mermaid.initialize({
@@ -65,22 +67,46 @@ function MermaidBlock({ code }: { code: string }) {
 
 function DrawioBlock({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const theme = useTheme();
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const container = containerRef.current;
     const xml = code.trim();
-    const config = JSON.stringify({ highlight: theme.palette.primary.main, nav: true, resize: true, xml });
-    containerRef.current.innerHTML = "";
+    if (!xml) return;
+
+    const config = JSON.stringify({ highlight: "#006EAF", nav: true, resize: true, xml });
+    container.innerHTML = "";
     const div = document.createElement("div");
     div.className = "mxgraph";
     div.setAttribute("data-mxgraph", config);
-    containerRef.current.appendChild(div);
+    container.appendChild(div);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
+
+    const processElements = () => {
+      if (typeof w.GraphViewer !== "undefined") {
+        // GraphViewer.processElements re-scans, but only un-processed elements
+        w.GraphViewer.processElements();
+      }
+    };
+
     if (typeof w.GraphViewer !== "undefined") {
-      w.GraphViewer.processElements();
+      processElements();
+    } else {
+      // Script may not have loaded yet – poll until it's available
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (typeof w.GraphViewer !== "undefined") {
+          clearInterval(interval);
+          processElements();
+        } else if (attempts > 100) {
+          // ~10 s timeout
+          clearInterval(interval);
+        }
+      }, 100);
+      return () => clearInterval(interval);
     }
   }, [code]);
 
@@ -100,12 +126,214 @@ function DrawioBlock({ code }: { code: string }) {
   );
 }
 
-function createMarkdownComponents(): Components {
+function CodeSnippetBlock({ srcStr, content, overrideLang }: { srcStr: string, content: string, overrideLang?: string }) {
+  const lang = overrideLang || getLanguageFromPath(srcStr) || '';
+  const fileName = srcStr.split('/').pop() || srcStr;
+  
+  return (
+    <Box sx={{ my: 2 }}>
+      <Box sx={{
+        bgcolor: 'action.hover',
+        px: 2,
+        py: 0.5,
+        borderTopLeftRadius: 4,
+        borderTopRightRadius: 4,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderBottom: 'none',
+        fontSize: '0.75rem',
+        fontFamily: '"Fira Code", "Consolas", monospace',
+        color: 'text.secondary',
+      }}>
+        {fileName}
+      </Box>
+      <Box
+        component="pre"
+        sx={{
+          bgcolor: 'background.paper',
+          border: '1px solid',
+          borderColor: 'divider',
+          p: 2,
+          borderBottomLeftRadius: 4,
+          borderBottomRightRadius: 4,
+          overflow: 'auto',
+          fontSize: '0.875rem',
+          fontFamily: '"Fira Code", "Consolas", monospace',
+          m: 0,
+        }}
+      >
+        <code className={lang ? `language-${lang}` : undefined}>{content}</code>
+      </Box>
+    </Box>
+  );
+}
+
+// ─── VFS file resolver hook ──────────────────────────
+
+/** Map from file extension to Monaco/code-block language id */
+const EXT_TO_LANGUAGE: Record<string, string> = {
+  ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+  py: 'python', rs: 'rust', go: 'go', java: 'java', kt: 'kotlin',
+  c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp', cs: 'csharp',
+  rb: 'ruby', php: 'php', swift: 'swift', sh: 'shell', bash: 'shell',
+  yml: 'yaml', yaml: 'yaml', json: 'json', xml: 'xml', html: 'html',
+  css: 'css', scss: 'scss', sql: 'sql', md: 'markdown', toml: 'toml',
+  ini: 'ini', dockerfile: 'dockerfile', makefile: 'makefile',
+  r: 'r', lua: 'lua', dart: 'dart', zig: 'zig', ex: 'elixir',
+};
+
+function getLanguageFromPath(path: string): string | undefined {
+  const ext = path.split('.').pop()?.toLowerCase();
+  return ext ? EXT_TO_LANGUAGE[ext] : undefined;
+}
+
+function isDrawioFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith('.drawio') || lower.endsWith('.drawio.xml');
+}
+
+function isCodeFile(path: string): boolean {
+  return getLanguageFromPath(path) !== undefined;
+}
+
+function isImageFile(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase() || '';
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'].includes(ext);
+}
+
+interface ResolvedFiles {
+  imageUrls: Map<string, string>;
+  textContents: Map<string, string>;
+}
+
+function useVFSFileResolver(
+  markdown: string,
+  activeFile: string | null,
+  readFileData?: (path: string) => Promise<string | Blob | undefined>,
+): ResolvedFiles {
+  const [resolved, setResolved] = useState<ResolvedFiles>({ imageUrls: new Map(), textContents: new Map() });
+  const revokeListRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!readFileData) return;
+
+    const mdImgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    const htmlImgRegex = /<img[^>]+src=["']([^"']+)["']/gi;
+    const mkdocsSnippetRegex = /--8<--\s*(["'])(.+?)\1/g;
+    
+    const refs: string[] = [];
+    let match: RegExpExecArray | null;
+    
+    while ((match = mdImgRegex.exec(markdown)) !== null) {
+      const src = match[2];
+      if (src && !src.startsWith('http') && !src.startsWith('data:')) {
+        refs.push(src);
+      }
+    }
+    while ((match = htmlImgRegex.exec(markdown)) !== null) {
+      const src = match[1];
+      if (src && !src.startsWith('http') && !src.startsWith('data:')) {
+        refs.push(src);
+      }
+    }
+    while ((match = mkdocsSnippetRegex.exec(markdown)) !== null) {
+      const src = match[2];
+      if (src && !src.startsWith('http')) {
+        refs.push(src);
+      }
+    }
+
+    if (refs.length === 0) {
+      // Clear any previously resolved
+      if (revokeListRef.current.length > 0) {
+        for (const url of revokeListRef.current) URL.revokeObjectURL(url);
+        revokeListRef.current = [];
+        setResolved({ imageUrls: new Map(), textContents: new Map() });
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const newImageUrls = new Map<string, string>();
+      const newTextContents = new Map<string, string>();
+      const toRevoke: string[] = [];
+
+      for (const ref of refs) {
+        let resolvedPath: string;
+        if (ref.startsWith('/')) {
+          resolvedPath = normalisePath(ref);
+        } else if (activeFile) {
+          const dir = activeFile.split('/').slice(0, -1).join('/') || '/';
+          resolvedPath = normalisePath(dir + '/' + ref);
+        } else {
+          resolvedPath = normalisePath('/' + ref);
+        }
+
+        try {
+          const data = await readFileData(resolvedPath);
+          if (cancelled) return;
+
+          // Draw.io or code files → store as text
+          if (isDrawioFile(ref) || isCodeFile(ref)) {
+            if (typeof data === 'string') {
+              newTextContents.set(ref, data);
+            } else if (data instanceof Blob) {
+              newTextContents.set(ref, await data.text());
+            }
+          } else {
+            // Image files → create blob URLs
+            if (data instanceof Blob) {
+              const url = URL.createObjectURL(data);
+              newImageUrls.set(ref, url);
+              toRevoke.push(url);
+            } else if (typeof data === 'string') {
+              const blob = new Blob([data], { type: 'image/svg+xml' });
+              const url = URL.createObjectURL(blob);
+              newImageUrls.set(ref, url);
+              toRevoke.push(url);
+            }
+          }
+        } catch {
+          // File not found in VFS
+        }
+      }
+
+      if (!cancelled) {
+        for (const url of revokeListRef.current) URL.revokeObjectURL(url);
+        revokeListRef.current = toRevoke;
+        setResolved({ imageUrls: newImageUrls, textContents: newTextContents });
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [markdown, activeFile, readFileData]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of revokeListRef.current) URL.revokeObjectURL(url);
+    };
+  }, []);
+
+  return resolved;
+}
+
+function createMarkdownComponents(resolvedFiles?: ResolvedFiles): Components {
   return {
     code({ className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || "");
       const language = match ? match[1] : "";
       const codeString = String(children).replace(/\n$/, "");
+
+      const snippetMatch = /^--8<--\s*(["'])(.+?)\1$/.exec(codeString.trim());
+      if (snippetMatch && !codeString.includes('\n')) {
+         const srcStr = snippetMatch[2];
+         const content = resolvedFiles?.textContents.get(srcStr);
+         if (content) {
+            return <CodeSnippetBlock srcStr={srcStr} content={content} overrideLang={language} />;
+         }
+      }
 
       if (language === "mermaid") {
         return <MermaidBlock code={codeString} />;
@@ -182,11 +410,64 @@ function createMarkdownComponents(): Components {
       </Box>
     );
   },
+  p({ children }) {
+    const childArr = React.Children.toArray(children);
+
+    // Check for MkDocs snippet macro
+    if (childArr.length === 1 && typeof childArr[0] === "string") {
+      const str = (childArr[0] as string).trim();
+      const snippetMatch = /^--8<--\s*(["'])(.+?)\1$/.exec(str);
+      if (snippetMatch) {
+         const srcStr = snippetMatch[2];
+         const content = resolvedFiles?.textContents.get(srcStr);
+         if (content) {
+            return <CodeSnippetBlock srcStr={srcStr} content={content} />;
+         }
+         return <Box component="span" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>Snippet file not found: {srcStr}</Box>;
+      }
+    }
+
+    // Detect if children include an img element that will render as a block
+    // (drawio diagram or code file embed). In react-markdown v10, node prop
+    // is not available, so we check the src prop directly.
+    const hasBlockChild = childArr.some((child) => {
+      if (!React.isValidElement(child)) return false;
+      const src = (child.props as Record<string, unknown>).src;
+      if (typeof src === 'string') {
+        return isDrawioFile(src) || (isCodeFile(src) && !isImageFile(src));
+      }
+      return false;
+    });
+    if (hasBlockChild) {
+      return <Box sx={{ my: 2 }}>{children}</Box>;
+    }
+    return <Typography sx={{ mb: 2, lineHeight: 1.6, "&:last-child": { mb: 0 } }}>{children}</Typography>;
+  },
   img({ src, alt, ...props }) {
+    const srcStr = typeof src === 'string' ? src : undefined;
+
+    // Draw.io file from VFS
+    if (srcStr && isDrawioFile(srcStr)) {
+      const content = resolvedFiles?.textContents.get(srcStr);
+      if (content) return <DrawioBlock code={content} />;
+      return <Box component="span" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>Draw.io file not found: {srcStr}</Box>;
+    }
+
+    // Code file from VFS
+    if (srcStr && isCodeFile(srcStr) && !isImageFile(srcStr)) {
+      const content = resolvedFiles?.textContents.get(srcStr);
+      if (content) {
+        return <CodeSnippetBlock srcStr={srcStr} content={content} />;
+      }
+      return <Box component="span" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>Code file not found: {srcStr}</Box>;
+    }
+
+    // Regular image
+    const resolved = srcStr && resolvedFiles ? resolvedFiles.imageUrls.get(srcStr) : undefined;
     return (
       <Box
         component="img"
-        src={src}
+        src={resolved || srcStr || src}
         alt={alt || ""}
         sx={{ maxWidth: "100%", height: "auto", borderRadius: 1 }}
         {...props}
@@ -215,22 +496,116 @@ function createMarkdownComponents(): Components {
 }
 
 interface MarkdownPreviewProps {
-  content: string;
+  /** Markdown content. When omitted, reads from VFS context. */
+  content?: string;
   previewRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export default function MarkdownPreview({
-  content,
+  content: contentProp,
   previewRef,
 }: MarkdownPreviewProps) {
   const { appConfig } = useConfig();
-  const components = useMemo(() => createMarkdownComponents(), []);
+
+  // VFS integration: use VFS context when content is not provided
+  const vfs = useOptionalVFS();
+  const isVFSMode = contentProp === undefined;
+  const effectiveContent = isVFSMode ? (vfs?.activeContent ?? '') : contentProp;
+
+  // VFS file resolution (images, drawio, code files)
+  const vfsActiveFile = isVFSMode ? (vfs?.activeFile ?? null) : null;
+  const resolvedFiles = useVFSFileResolver(
+    effectiveContent,
+    vfsActiveFile,
+    vfs?.readFileData,
+  );
+
+  const hasResolved = resolvedFiles.imageUrls.size > 0 || resolvedFiles.textContents.size > 0;
+  const components = useMemo(
+    () => createMarkdownComponents(hasResolved ? resolvedFiles : undefined),
+    [resolvedFiles, hasResolved],
+  );
+
+  const [directFileUrl, setDirectFileUrl] = useState<string | null>(null);
+
+  // When a non-markdown image/drawio file is selected directly, load it.
+  useEffect(() => {
+    if (!isVFSMode || !vfs?.activeFile || vfs.activeFile.endsWith('.md') || vfs.activeFile.endsWith('.markdown')) {
+      setDirectFileUrl(null);
+      return;
+    }
+    
+    let cancelled = false;
+    if (isImageFile(vfs.activeFile)) {
+      vfs.readFileData(vfs.activeFile).then(data => {
+        if (cancelled) return;
+        if (data instanceof Blob) {
+          setDirectFileUrl(URL.createObjectURL(data));
+        } else if (typeof data === 'string') {
+          const blob = new Blob([data], { type: 'image/svg+xml' });
+          setDirectFileUrl(URL.createObjectURL(blob));
+        }
+      });
+    }
+    return () => {
+      cancelled = true;
+      if (directFileUrl) URL.revokeObjectURL(directFileUrl);
+    };
+  }, [isVFSMode, vfs?.activeFile, vfs?.readFileData]);
+
+  // In VFS mode, handle non-markdown files
+  if (isVFSMode && vfs?.activeFile) {
+    const file = vfs.activeFile;
+    const isMarkdown = file.endsWith('.md') || file.endsWith('.markdown');
+    
+    if (!isMarkdown) {
+      const isImg = isImageFile(file);
+      const isDrawio = isDrawioFile(file);
+      
+      // If it's a drawio file, we DO NOT exit early anymore since we want it 
+      // rendering in the standard markdown preview block alongside XML Editor
+      if (!isImg && !isDrawio) return null;
+
+      // Drawio rendering wrapper when a diagram is opened directly
+      if (isDrawio) {
+        return (
+          <>
+            <Script src={appConfig.drawioViewerUrl} strategy="afterInteractive" />
+            <Paper
+              ref={previewRef}
+              elevation={0}
+              sx={{ height: "100%", overflow: "auto", p: 3, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}
+            >
+              <DrawioBlock code={vfs.activeContent ?? ''} />
+            </Paper>
+          </>
+        );
+      }
+
+      // Standalone Image Views
+      return (
+        <Paper
+          ref={previewRef}
+          elevation={0}
+          sx={{ height: "100%", overflow: "auto", p: 3, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}
+        >
+          {directFileUrl ? (
+            <Box 
+              component="img" 
+              src={directFileUrl} 
+              sx={{ maxWidth: '100%', height: 'auto' }} 
+            />
+          ) : null}
+        </Paper>
+      );
+    }
+  }
 
   return (
     <>
       <Script
         src={appConfig.drawioViewerUrl}
-        strategy="lazyOnload"
+        strategy="afterInteractive"
       />
       <Paper
       ref={previewRef}
@@ -269,7 +644,7 @@ export default function MarkdownPreview({
         rehypePlugins={[rehypeRaw]}
         components={components}
       >
-        {content}
+        {effectiveContent}
       </ReactMarkdown>
     </Paper>
     </>
