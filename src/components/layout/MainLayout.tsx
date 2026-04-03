@@ -348,15 +348,6 @@ export default function MainLayout() {
 
       {/* Main Content */}
       <Box sx={{ flexGrow: 1, display: "flex", overflow: "hidden" }}>
-        {/* Outline Sidebar */}
-        {showOutline && (
-          <OutlineSidebar
-            markdown={displayMarkdown}
-            previewRef={previewRef}
-            onItemClick={(line) => editorRef.current?.scrollToLine(line)}
-          />
-        )}
-
         {/* Editor + Preview Split */}
         <Box sx={{ flexGrow: 1, overflow: "hidden" }}>
           <PanelGroup orientation="horizontal">
@@ -365,7 +356,8 @@ export default function MainLayout() {
                 sx={{
                   height: "100%",
                   position: "relative",
-                  borderRight: "1px solid #e0e0e0",
+                  borderRight: "1px solid",
+                  borderColor: "divider",
                 }}
               >
                 <MonacoWrapper
@@ -381,7 +373,7 @@ export default function MainLayout() {
               style={
                 {
                   width: 6,
-                  background: "#f0f0f0",
+                  backgroundColor: "var(--mui-palette-divider)",
                   cursor: "col-resize",
                 } as CSSProperties
               }
@@ -391,6 +383,15 @@ export default function MainLayout() {
             </Panel>
           </PanelGroup>
         </Box>
+
+        {/* Outline Sidebar */}
+        {showOutline && (
+          <OutlineSidebar
+            markdown={displayMarkdown}
+            previewRef={previewRef}
+            onItemClick={(line) => editorRef.current?.scrollToLine(line)}       
+          />
+        )}
       </Box>
 
       {/* Hidden file input */}

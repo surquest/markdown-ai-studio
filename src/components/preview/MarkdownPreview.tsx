@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useCallback, useId, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { Box, Paper } from "@mui/material";
+import { Box, Paper, useTheme } from "@mui/material";
 import type { Components } from "react-markdown";
 import mermaid from "mermaid";
 import Script from "next/script";
@@ -20,6 +20,7 @@ mermaid.initialize({
 function MermaidBlock({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const uniqueId = useId().replace(/:/g, "_");
+  const theme = useTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -27,6 +28,11 @@ function MermaidBlock({ code }: { code: string }) {
     const renderDiagram = async () => {
       if (!containerRef.current) return;
       try {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: theme.palette.mode === 'dark' ? 'dark' : 'default',
+          securityLevel: "loose",
+        });
         const { svg } = await mermaid.render(`mermaid_${uniqueId}`, code);
         if (!cancelled && containerRef.current) {
           containerRef.current.innerHTML = svg;
@@ -59,11 +65,12 @@ function MermaidBlock({ code }: { code: string }) {
 
 function DrawioBlock({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!containerRef.current) return;
     const xml = code.trim();
-    const config = JSON.stringify({ highlight: "#0000ff", nav: true, resize: true, xml });
+    const config = JSON.stringify({ highlight: theme.palette.primary.main, nav: true, resize: true, xml });
     containerRef.current.innerHTML = "";
     const div = document.createElement("div");
     div.className = "mxgraph";
@@ -83,7 +90,8 @@ function DrawioBlock({ code }: { code: string }) {
       sx={{
         my: 2,
         width: "100%",
-        border: "1px solid #ddd",
+        border: "1px solid",
+        borderColor: "divider",
         borderRadius: 1,
         overflow: "auto",
         "& .mxgraph": { maxWidth: "100%" },
@@ -112,7 +120,9 @@ function createMarkdownComponents(): Components {
         <Box
           component="pre"
           sx={{
-            bgcolor: "#f5f5f5",
+            bgcolor: "background.paper",
+            border: "1px solid",
+            borderColor: "divider",
             p: 2,
             borderRadius: 1,
             overflow: "auto",
@@ -131,7 +141,7 @@ function createMarkdownComponents(): Components {
       <Box
         component="code"
         sx={{
-          bgcolor: "#f0f0f0",
+          bgcolor: "action.selected",
           px: 0.75,
           py: 0.25,
           borderRadius: 0.5,
@@ -153,16 +163,17 @@ function createMarkdownComponents(): Components {
             borderCollapse: "collapse",
             width: "100%",
             "& th, & td": {
-              border: "1px solid #ddd",
+              border: "1px solid",
+              borderColor: "divider",
               p: 1,
               textAlign: "left",
             },
             "& th": {
-              bgcolor: "#f5f5f5",
+              bgcolor: "action.hover",
               fontWeight: 600,
             },
             "& tr:nth-of-type(even)": {
-              bgcolor: "#fafafa",
+              bgcolor: "action.selected",
             },
           }}
         >
@@ -187,7 +198,8 @@ function createMarkdownComponents(): Components {
       <Box
         component="blockquote"
         sx={{
-          borderLeft: "4px solid #1976d2",
+          borderLeft: "4px solid",
+          borderColor: "primary.main",
           pl: 2,
           ml: 0,
           my: 2,
@@ -232,7 +244,8 @@ export default function MarkdownPreview({
           fontWeight: 700,
           mt: 3,
           mb: 1.5,
-          borderBottom: "1px solid #eee",
+          borderBottom: "1px solid",
+          borderColor: "divider",
           pb: 1,
         },
         "& h2": { fontSize: "1.5rem", fontWeight: 600, mt: 2.5, mb: 1 },
@@ -248,7 +261,7 @@ export default function MarkdownPreview({
           textDecoration: "none",
           "&:hover": { textDecoration: "underline" },
         },
-        "& hr": { border: "none", borderTop: "1px solid #eee", my: 3 },
+        "& hr": { border: "none", borderTop: "1px solid", borderColor: "divider", my: 3 },
       }}
     >
       <ReactMarkdown
@@ -342,7 +355,8 @@ export function OutlineSidebar({ markdown, previewRef, onItemClick }: OutlineSid
       sx={{
         p: 1.5,
         overflow: "auto",
-        borderRight: "1px solid #eee",
+        borderLeft: "1px solid",
+        borderColor: "divider",
         minWidth: 200,
         maxWidth: 260,
         fontSize: "0.8rem",

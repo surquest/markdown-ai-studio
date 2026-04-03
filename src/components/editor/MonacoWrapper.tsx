@@ -21,8 +21,10 @@ import {
   Box,
   Typography,
   IconButton,
+  useTheme,
 } from "@mui/material";
-import { AutoFixHigh, SmartToy, Close, Check } from "@mui/icons-material";
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import { AutoFixHigh, Close, Check } from "@mui/icons-material";
 import { useVertexAI } from "@/lib/hooks/useVertexAI";
 import { useConfig } from "@/lib/context/ConfigContext";
 
@@ -79,6 +81,8 @@ const MonacoWrapper = forwardRef<MonacoWrapperHandle, MonacoWrapperProps>(
 
   const { generate } = useVertexAI();
   const { aiConfig } = useConfig();
+  const theme = useTheme();
+  const monacoTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs-light';
 
   const handleEditorMount: OnMount = useCallback(
     (editor, monaco) => {
@@ -331,7 +335,7 @@ useEffect(() => {
                 language="markdown"
                 original={value}
                 modified={pendingAiDiff}
-                theme="vs-light"
+                theme={monacoTheme}
                 options={{
                   renderSideBySide: true,
                   minimap: { enabled: false },
@@ -369,9 +373,8 @@ useEffect(() => {
                 </IconButton>
               </Tooltip>
               <Tooltip title="Confirm Changes">
-                <IconButton 
+                <IconButton
                   onClick={handleAcceptDiff}
-                  variant="contained"
                   color="primary"
                 >
                   <Check />
@@ -394,7 +397,7 @@ useEffect(() => {
           value={value}
           onChange={(val) => onChange(val || "")}
           onMount={handleEditorMount}
-          theme="vs-light"
+          theme={monacoTheme}
           options={{
             minimap: { enabled: false },
             wordWrap: "on",
@@ -441,7 +444,7 @@ useEffect(() => {
             onClick={() => setGenerateDialogOpen(true)}
             sx={{ position: "absolute", bottom: 24, right: 24, zIndex: 1200 }}
           >
-            <SmartToy />
+            <AutoAwesomeIcon />
           </Fab>
         </Tooltip>
       )}
@@ -561,8 +564,7 @@ useEffect(() => {
                   Model Settings:
                 </Typography>
                 <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
-                  Model: {aiConfig.modelId} | Thinking: {aiConfig.thinkingLevel}{" "}
-                  | Temp: {aiConfig.temperature.toFixed(1)}
+                  Model: {aiConfig.modelId} | Thinking: {aiConfig.thinkingLevel}
                 </Typography>
               </Box>
               <Box>

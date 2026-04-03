@@ -120,11 +120,6 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
       <Card sx={{ maxWidth: 480, width: '100%' }}>
         <CardContent sx={{ p: 4 }}>
           <Stack spacing={3} alignItems="center">
-            <Avatar
-              sx={{ width: 64, height: 64, bgcolor: 'primary.main', fontSize: 28 }}
-            >
-              MD
-            </Avatar>
             <Typography variant="h4" fontWeight={700} textAlign="center">
               Markdown AI Studio
             </Typography>

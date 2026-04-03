@@ -2,6 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import aiConfigJson from '@/lib/config/ai-config.json';
 import Providers from './providers';
+import { Bai_Jamjuree } from 'next/font/google';
+const baiJamjuree = Bai_Jamjuree({
+  weight: ['200', '300', '400', '500', '600', '700'],
+  subsets: ['latin', 'vietnamese'],
+  display: 'swap',
+  variable: '--font-bai-jamjuree',
+});
 
 export default function RootLayout({
   children,
@@ -23,7 +30,7 @@ export default function RootLayout({
   );
 
   return (
-    <html lang="en">
+    <html lang="en" className={baiJamjuree.variable}>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Markdown AI Studio</title>

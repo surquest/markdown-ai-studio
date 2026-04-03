@@ -105,7 +105,7 @@ export default function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             </Select>
           </FormControl>
 
-          <Box>
+          <Box sx={{ display: 'none' }}>
             <Typography variant="body2" gutterBottom>
               Temperature: {localConfig.temperature.toFixed(1)}
             </Typography>
