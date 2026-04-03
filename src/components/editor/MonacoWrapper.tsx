@@ -20,8 +20,9 @@ import {
   Tooltip,
   Box,
   Typography,
+  IconButton,
 } from "@mui/material";
-import { AutoFixHigh, SmartToy } from "@mui/icons-material";
+import { AutoFixHigh, SmartToy, Close, Check } from "@mui/icons-material";
 import { useVertexAI } from "@/lib/hooks/useVertexAI";
 import { useConfig } from "@/lib/context/ConfigContext";
 
@@ -336,7 +337,7 @@ useEffect(() => {
                   minimap: { enabled: false },
                   wordWrap: "on",
                   originalEditable: false,
-                  readOnly: true,
+                  readOnly: false,
                   fontSize: 14,
                   lineNumbers: "on",
                   scrollBeyondLastLine: false,
@@ -352,24 +353,30 @@ useEffect(() => {
                 left: "50%",
                 transform: "translateX(-50%)",
                 zIndex: 1400,
-                p: 1.5,
+                p: 1,
                 bgcolor: "background.paper",
-                borderRadius: 2,
+                borderRadius: "50px",
                 boxShadow: 3,
                 display: "flex",
-                gap: 2,
+                gap: 1,
               }}
             >
-              <Button variant="outlined" color="error" onClick={handleRejectDiff}>
-                Rollback
-              </Button>
-              <Button
-                variant="contained"
-                color="success"
-                onClick={handleAcceptDiff}
-              >
-                Confirm Changes
-              </Button>
+              <Tooltip title="Rollback">
+                <IconButton 
+                  onClick={handleRejectDiff}
+                >
+                  <Close />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Confirm Changes">
+                <IconButton 
+                  onClick={handleAcceptDiff}
+                  variant="contained"
+                  color="primary"
+                >
+                  <Check />
+                </IconButton>
+              </Tooltip>
             </Box>
           </Box>
       )}

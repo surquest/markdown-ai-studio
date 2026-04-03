@@ -281,18 +281,17 @@ export default function MainLayout() {
           <Box sx={{ flexGrow: 1 }} />
 
           <Tooltip title="Import Markdown">
-            <IconButton size="small" onClick={handleImport}>
+            <IconButton onClick={handleImport}>
               <UploadIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title="Export Markdown">
-            <IconButton size="small" onClick={handleExport}>
+            <IconButton onClick={handleExport}>
               <DownloadIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title="Toggle Outline">
             <IconButton
-              size="small"
               onClick={() => setShowOutline(!showOutline)}
               color={showOutline ? "primary" : "default"}
             >
@@ -302,7 +301,6 @@ export default function MainLayout() {
 
           <Tooltip title="Settings">
             <IconButton
-              size="small"
               onClick={() => setSettingsOpen(true)}
               sx={{ mr: 1 }}
             >
